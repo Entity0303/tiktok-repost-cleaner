@@ -91,9 +91,11 @@ export function createEngine({ config, onProgress, onLog }) {
         const href = keyOf(tile);
         visited.add(href); // oznacz od razu, by nie wracać do tego samego kafelka
 
-        // 3. otwórz modal i poczekaj na przycisk repostu
+        // 3. otwórz modal i poczekaj na przycisk repostu.
+        // Dłuższy timeout (12 s): modal potrafi ładować się wolno, a przedwczesny
+        // null fałszywie wyglądałby jak nieudana akcja i wywoływał safe-stop.
         clickSafe(tile);
-        const btn = await waitFor(() => S.repostButton());
+        const btn = await waitFor(() => S.repostButton(), 12000);
 
         // Cancel token — nie wykonuj żadnej akcji usuwania po stop().
         if (cancelled) {
@@ -101,8 +103,19 @@ export function createEngine({ config, onProgress, onLog }) {
           break;
         }
 
-        // 4. USUWANIE z bezpiecznikiem stanu
-        if (!btn || !S.isReposted(btn)) {
+        // 4a. Modal się NIE otworzył (btn === null) → problem techniczny (wolne
+        // ładowanie), NIE realny zły stan. Nie liczymy tego do safe-stop-fails.
+        if (!btn) {
+          log('Modal nie zdążył się załadować — pomijam.');
+          await closeModal();
+          await pause(config.minDelay, config.maxDelay);
+          continue;
+        }
+
+        // 4b. Modal jest, ale przycisk NIE jest w stanie „zrepostowane” → prawdziwy
+        // zły stan. TO liczymy do fails i uruchamiamy safe-stop (bezpiecznik przed
+        // klikaniem w niewłaściwe elementy).
+        if (!S.isReposted(btn)) {
           log('Pominięto: nie w stanie „zrepostowane”.');
           fails += 1;
           await closeModal();

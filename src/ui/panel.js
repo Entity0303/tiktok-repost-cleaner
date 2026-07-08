@@ -166,6 +166,14 @@ export function mountPanel({ config, onStart, onStop, onChange } = {}) {
   // Panel tylko emituje zdarzenie; stanem „w toku” (setRunning) steruje main.js,
   // żeby był jeden ośrodek prawdy (start/stop + naturalny koniec przez setProgress).
   startBtn.addEventListener('click', () => {
+    // Bezpiecznik: przy WYŁĄCZONYM dry-run żądaj świadomego potwierdzenia — raz,
+    // na Start (nie per repost). Anulowanie nie startuje i nie zmienia stanu UI.
+    if (!config.dryRun) {
+      const ok = window.confirm(
+        'Dry-run jest WYŁĄCZONY. Reposty zostaną NIEODWRACALNIE usunięte. Kontynuować?',
+      );
+      if (!ok) return;
+    }
     if (onStart) onStart();
   });
   stopBtn.addEventListener('click', () => {
