@@ -1,58 +1,152 @@
-// engine.js — silnik masowego un-repostu.
+// engine.js — asynchroniczny silnik masowego un-repostu.
 //
-// Pętla robocza (docelowo): collect → open → remove → close → scroll,
-// z obsługą trybu dry-run (nic nie usuwa) i możliwością anulowania (cancel).
-// Między każdą akcją wykonujemy losowe opóźnienie (randomDelay) z config.
+// Silnik NIE dotyka DOM-u interfejsu (żadnych paneli/przycisków UI). Komunikuje
+// się ze światem WYŁĄCZNIE przez callbacki onLog / onProgress przekazane przy
+// tworzeniu. Selektory bierze tylko z S (selectors.js), akcje z dom.js.
 //
-// Silnik NIE zna szczegółów UI — komunikuje się przez callbacki (onLog, onProgress),
-// które podpina panel. Dzięki temu logikę i widok da się rozwijać niezależnie.
+// Pętla robocza:
+//   1. zbierz S.gridItems(), pomiń już odwiedzone (Set po href);
+//   2. brak nowych → scroll na dół, poczekaj na doładowanie; brak → koniec;
+//   3. clickSafe(kafelek) → waitFor(S.repostButton);
+//   4. USUWANIE z bezpiecznikiem stanu (klik tylko gdy S.isReposted === true);
+//   5. zamknij modal (Escape + S.closeButton);
+//   6. losowa pauza minDelay..maxDelay, onProgress, następny kafelek.
+//
+// Zatrzymanie:
+//   - stop()  → cancel token, przerywa przy najbliższym punkcie kontrolnym
+//               (nigdy nie wykona kliknięcia po stop);
+//   - licznik == config.max (gdy max > 0);
+//   - safe-stop: 5 nieudanych akcji z rzędu.
 
-import { randomDelay } from './dom.js';
+import { pause, waitFor, clickSafe } from './dom.js';
+import { S } from './selectors.js';
 
-// Tworzy instancję silnika. `config` pochodzi z config.js.
-export function createEngine(config) {
-  // Flaga anulowania bieżącego przebiegu.
+export function createEngine({ config, onProgress, onLog }) {
+  // Cancel token — ustawiany przez stop(), sprawdzany w każdym punkcie kontrolnym.
   let cancelled = false;
-  // Czy przebieg trwa (zabezpieczenie przed podwójnym startem).
+  // Zabezpieczenie przed podwójnym startem.
   let running = false;
 
-  // Zewnętrzne callbacki (podpina UI). Domyślnie no-op.
-  const listeners = {
-    onLog: () => {},
-    onProgress: () => {},
-    onDone: () => {},
-  };
+  const log = (msg) => onLog && onLog(msg);
+  const progress = (data) => onProgress && onProgress(data);
 
-  function on(event, handler) {
-    if (event in listeners) listeners[event] = handler;
+  // Zwraca klucz identyfikujący kafelek (absolutny href).
+  const keyOf = (tile) => tile.href || tile.getAttribute('href') || '';
+
+  // Czy istnieją nieodwiedzone kafelki w aktualnym DOM.
+  const hasFresh = (visited) =>
+    S.gridItems().some((t) => {
+      const k = keyOf(t);
+      return k && !visited.has(k);
+    });
+
+  // Zamknięcie modala „browse”: Escape na body + przycisk zamknięcia, jeśli jest.
+  async function closeModal() {
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+    );
+    const close = S.closeButton();
+    if (close) clickSafe(close);
+    // Poczekaj chwilę, aż modal faktycznie zniknie (przycisk repostu przestaje istnieć).
+    await waitFor(() => !S.repostButton(), 2000, 100);
   }
 
-  // Uruchamia przebieg usuwania. Zwraca Promise kończący się po zakończeniu/anulowaniu.
   async function start() {
     if (running) return;
     running = true;
     cancelled = false;
 
-    listeners.onLog(config.dryRun ? '[DRY-RUN] Start (nic nie zostanie usunięte).' : 'Start.');
+    const visited = new Set(); // href-y odwiedzonych kafelków (bez powtórek)
+    let count = 0; // ile repostów usunięto (w dry-run: ile BY usunięto)
+    let fails = 0; // nieudane akcje z rzędu (safe-stop po 5)
 
-    // TODO: właściwa pętla:
-    //   1. collect  — zbierz kafelki repostów (repost-finder / selectors.REPOST_ITEM)
-    //   2. open     — otwórz akcje kafelka
-    //   3. remove   — jeśli !dryRun: kliknij „Usuń repost” i potwierdź; jeśli dryRun: tylko zaloguj
-    //   4. close    — zamknij modal/kartę
-    //   5. scroll   — doładuj kolejne reposty (lazy-loading)
-    //   między krokami: await randomDelay(config.delayMinMs, config.delayMaxMs)
-    //   przerwij, gdy: cancelled === true lub osiągnięto config.limit
-    void randomDelay;
+    log(config.dryRun ? '[DRY-RUN] Start — nic nie zostanie usunięte.' : 'Start.');
+
+    // Warunek zatrzymania sprawdzany w punktach kontrolnych.
+    const reachedMax = () => config.max > 0 && count >= config.max;
+    const shouldStop = () => cancelled || reachedMax();
+
+    while (!shouldStop()) {
+      // 1. zbierz kafelki i odfiltruj już odwiedzone
+      const fresh = S.gridItems().filter((t) => {
+        const k = keyOf(t);
+        return k && !visited.has(k);
+      });
+
+      // 2. brak nowych → scroll i czekaj na doładowanie
+      if (fresh.length === 0) {
+        window.scrollTo(0, document.body.scrollHeight);
+        const grew = await waitFor(() => hasFresh(visited));
+        if (!grew) {
+          log('Koniec — brak nowych repostów po doładowaniu.');
+          break;
+        }
+        continue; // wróć na górę i zbierz świeżo doładowane kafelki
+      }
+
+      // 3.–6. przetwarzaj kafelki po kolei
+      for (const tile of fresh) {
+        if (shouldStop()) break;
+
+        const href = keyOf(tile);
+        visited.add(href); // oznacz od razu, by nie wracać do tego samego kafelka
+
+        // 3. otwórz modal i poczekaj na przycisk repostu
+        clickSafe(tile);
+        const btn = await waitFor(() => S.repostButton());
+
+        // Cancel token — nie wykonuj żadnej akcji usuwania po stop().
+        if (cancelled) {
+          await closeModal();
+          break;
+        }
+
+        // 4. USUWANIE z bezpiecznikiem stanu
+        if (!btn || !S.isReposted(btn)) {
+          log('Pominięto: nie w stanie „zrepostowane”.');
+          fails += 1;
+          await closeModal();
+          if (fails >= 5) {
+            log('⚠ Safe-stop: 5 nieudanych akcji z rzędu — zatrzymuję silnik.');
+            cancelled = true;
+            break;
+          }
+          await pause(config.minDelay, config.maxDelay);
+          continue;
+        }
+
+        // Stan potwierdzony: klik toggluje repost i usuwa go od razu (bez dialogu).
+        if (config.dryRun) {
+          // W dry-run NIE klikamy — jedynie symulujemy, żeby domyślnie nic nie usuwać.
+          log(`[DRY-RUN] Usunąłbym repost: ${href}`);
+        } else {
+          clickSafe(btn);
+          log(`Usunięto repost: ${href}`);
+        }
+        count += 1;
+        fails = 0; // udana akcja resetuje licznik bezpiecznika
+
+        // 5. zamknij modal
+        await closeModal();
+
+        // 6. postęp + losowa pauza przed kolejnym kafelkiem
+        progress({ count, max: config.max, href });
+        if (shouldStop()) break;
+        await pause(config.minDelay, config.maxDelay);
+      }
+    }
 
     running = false;
-    listeners.onDone({ removed: 0, cancelled });
+    const reason = cancelled ? (reachedMax() ? 'osiągnięto limit' : 'przerwano') : 'wyczerpano reposty';
+    log(`Koniec (${reason}). Przetworzono repostów: ${count}.`);
+    progress({ count, max: config.max, done: true });
   }
 
-  // Sygnalizuje anulowanie — pętla powinna zakończyć się przy najbliższym sprawdzeniu.
+  // Cancel token — przerwanie nastąpi przy najbliższym punkcie kontrolnym.
   function stop() {
+    if (running) log('Zatrzymywanie…');
     cancelled = true;
   }
 
-  return { start, stop, on, get running() { return running; } };
+  return { start, stop };
 }

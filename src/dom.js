@@ -1,12 +1,10 @@
 // dom.js — helpery DOM oraz narzędzia czasowe (opóźnienia, losowość).
 //
-// Wszystkie funkcje operujące na DOM przyjmują strategie selektorów z selectors.js.
-// Tu NIE trzymamy żadnych selektorów na sztywno.
+// Tu NIE trzymamy żadnych selektorów — te są wyłącznie w selectors.js.
 
-// Zwraca liczbę całkowitą z przedziału [min, max] (włącznie).
-export function rand(min, max) {
-  // TODO: właściwa implementacja
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+// Zwraca liczbę całkowitą z przedziału [a, b] (włącznie).
+export function rand(a, b) {
+  return Math.floor(Math.random() * (b - a + 1)) + a;
 }
 
 // Usypia na podaną liczbę milisekund.
@@ -14,38 +12,34 @@ export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Losowe opóźnienie z przedziału [minMs, maxMs] — do stosowania między akcjami.
-export function randomDelay(minMs, maxMs) {
-  return sleep(rand(minMs, maxMs));
+// Losowa pauza z przedziału [min, max] ms — do stosowania między akcjami,
+// żeby tempo działania nie było robotyczne (patrz CLAUDE.md).
+export function pause(min, max) {
+  return sleep(rand(min, max));
 }
 
-// Czeka aż spełniony zostanie warunek (np. pojawienie się elementu) albo minie timeout.
-// TODO: implementacja z MutationObserver / pollingiem.
-export async function waitFor(predicate, { timeoutMs = 10000, intervalMs = 200 } = {}) {
-  void predicate;
-  void timeoutMs;
-  void intervalMs;
+// Czeka, aż fn() zwróci wartość prawdziwą (np. element), odpytując co `step` ms.
+// Zwraca tę wartość albo null po przekroczeniu `timeout`.
+export async function waitFor(fn, timeout = 8000, step = 200) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    let result;
+    try {
+      result = fn();
+    } catch {
+      result = null; // błąd w predykacie traktujemy jak brak wyniku i próbujemy dalej
+    }
+    if (result) return result;
+    await sleep(step);
+  }
   return null;
 }
 
-// Znajduje element po widocznym tekście (z uwzględnieniem listy wariantów językowych).
-// TODO: implementacja — przeszukanie drzewa, dopasowanie tekstu, filtr widoczności.
-export function findByText(texts, { root = document, exact = false } = {}) {
-  void texts;
-  void root;
-  void exact;
-  return null;
-}
-
-// Znajduje pierwszy element pasujący do listy strategii selektorów (z fallbackami).
-// TODO: implementacja interpretera strategii z selectors.js.
-export function findByStrategies(strategies, { root = document } = {}) {
-  void strategies;
-  void root;
-  return null;
-}
-
-// Bezpieczny klik (sprawdza widoczność, przewija do elementu). TODO: implementacja.
-export function click(el) {
-  void el;
+// Bezpieczny klik: przewija element na środek widoku, po czym klika.
+// Zwraca true, gdy było w co kliknąć.
+export function clickSafe(el) {
+  if (!el) return false;
+  el.scrollIntoView({ block: 'center', inline: 'center' });
+  el.click();
+  return true;
 }

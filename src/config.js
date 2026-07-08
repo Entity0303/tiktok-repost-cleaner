@@ -6,24 +6,32 @@
 
 const STORAGE_KEY = 'trc:config';
 
-// Domyślna konfiguracja. Opóźnienia są losowane z przedziału [delayMinMs, delayMaxMs]
+// Domyślna konfiguracja. Opóźnienia są losowane z przedziału [minDelay, maxDelay]
 // między kolejnymi akcjami, żeby zachowanie było mniej robotyczne.
 export const DEFAULT_CONFIG = {
   dryRun: true, // DOMYŚLNIE ON — nic nie jest usuwane
-  limit: 0, // maksymalna liczba repostów do usunięcia w jednym przebiegu; 0 = bez limitu
-  delayMinMs: 800, // dolna granica losowego opóźnienia między akcjami
-  delayMaxMs: 2500, // górna granica losowego opóźnienia między akcjami
+  max: 40, // maksymalna liczba repostów do usunięcia w jednym przebiegu; 0 = bez limitu
+  minDelay: 1500, // dolna granica losowego opóźnienia między akcjami [ms]
+  maxDelay: 3500, // górna granica losowego opóźnienia między akcjami [ms]
 };
 
-// Wczytuje konfigurację, scalając zapisane wartości z domyślnymi.
+// JEDEN współdzielony, mutowalny obiekt konfiguracji. Ten sam referencyjnie
+// obiekt trafia do panelu i do silnika — panel mutuje jego pola, a silnik
+// czyta je NA BIEŻĄCO (m.in. dryRun per-akcja). Nie rozdawaj kopii.
+export const config = { ...DEFAULT_CONFIG };
+
+// Wczytuje zapis z GM i scala go do współdzielonego obiektu `config`, uzupełniając
+// brakujące pola z DEFAULT_CONFIG (stary zapis bez nowego pola nie wywali skryptu).
+// Zwraca TEN SAM obiekt `config` (mutacja w miejscu, nie nowa referencja).
 export function loadConfig() {
-  // TODO: walidacja i migracja starszych zapisów
   const saved = GM_getValue(STORAGE_KEY, null);
-  return { ...DEFAULT_CONFIG, ...(saved ?? {}) };
+  // Kolejność scalania: najpierw domyślne (fallback braków), potem zapisane wartości.
+  Object.assign(config, DEFAULT_CONFIG, saved ?? {});
+  return config;
 }
 
-// Zapisuje konfigurację na stałe.
-export function saveConfig(config) {
-  // TODO: walidacja przed zapisem (zakresy opóźnień, limit >= 0)
-  GM_setValue(STORAGE_KEY, config);
+// Zapisuje konfigurację na stałe (domyślnie współdzielony `config`).
+export function saveConfig(cfg = config) {
+  // TODO: walidacja przed zapisem (zakresy opóźnień, max >= 0)
+  GM_setValue(STORAGE_KEY, cfg);
 }
