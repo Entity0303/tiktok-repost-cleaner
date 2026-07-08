@@ -12,18 +12,25 @@
 //   3. Sprawdź, czy podświetla właściwy element (i tylko jego).
 
 export const S = {
-  // Kafelki repostów w siatce profilu — zwraca linki do wideo w kafelkach.
+  // Kafelki repostów w siatce profilu — zwraca linki wewnątrz kafelków repostów.
+  // Aktualny atrybut kafelka to data-e2e="user-repost-item" (potwierdzony w DOM 2026;
+  // wcześniej „user-post-item”). Siatka repostów zawiera zarówno filmy (/video/),
+  // jak i zdjęcia (/photo/) — łapiemy oba typy.
   // Weryfikacja: w konsoli wpisz
-  //   document.querySelectorAll('[data-e2e="user-post-item"] a[href*="/video/"]')
-  //   → powinno zwrócić po jednym linku na kafelek w siatce.
-  // Fallback: gdy pusto (np. inny wariant siatki), bierzemy wszystkie linki do wideo.
+  //   document.querySelectorAll('[data-e2e="user-repost-item"] a[href*="/video/"],[data-e2e="user-repost-item"] a[href*="/photo/"]')
+  //   → powinno zwrócić po jednym linku na kafelek repostu w siatce.
+  // Fallback: gdy pusto, bierzemy wszystkie linki wewnątrz kafelków repostów
+  //   (nadal ograniczone do user-repost-item — NIE łapiemy gołego a[href*="/video/"],
+  //   bo ten wciągał przypadkowe linki spoza repostów: pasek boczny, sugerowane).
   gridItems() {
     const items = [
-      ...document.querySelectorAll('[data-e2e="user-post-item"] a[href*="/video/"]'),
+      ...document.querySelectorAll(
+        '[data-e2e="user-repost-item"] a[href*="/video/"],[data-e2e="user-repost-item"] a[href*="/photo/"]',
+      ),
     ];
     if (items.length > 0) return items;
-    // fallback: dowolne linki do wideo na stronie
-    return [...document.querySelectorAll('a[href*="/video/"]')];
+    // fallback: dowolne linki wewnątrz kafelków repostów (oba typy: /video/ i /photo/)
+    return [...document.querySelectorAll('[data-e2e="user-repost-item"] a')];
   },
 
   // Przycisk „Repost” w otwartym modalu przeglądania wideo („browse”).

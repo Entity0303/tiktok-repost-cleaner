@@ -56,6 +56,15 @@ function toIntGE0(value, fallback = 0) {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+// Formatuje ETA [ms] jako „Xm Ys”. Brak/niepoprawne dane → „—”.
+function formatEta(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—';
+  const totalSec = Math.round(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m ${s}s`;
+}
+
 // Montuje panel w DOM i zwraca kontroler. `deps`:
 //   config    — obiekt konfiguracji (współdzielony z silnikiem; panel go mutuje),
 //   onStart   — wołane po kliknięciu „Start”,
@@ -70,6 +79,7 @@ export function mountPanel({ config, onStart, onStop, onChange } = {}) {
     class: 'trc-panel__input',
     type: 'number',
     min: '0',
+    max: '500', // górny ogranicznik partii; 0 nadal = bez limitu
     step: '1',
     value: String(config.max),
   });
@@ -92,6 +102,7 @@ export function mountPanel({ config, onStart, onStop, onChange } = {}) {
   const startBtn = el('button', { class: 'trc-panel__btn trc-panel__btn--start', text: 'Start' });
   const stopBtn = el('button', { class: 'trc-panel__btn trc-panel__btn--stop', text: 'Stop', disabled: true });
   const progressValue = el('span', { class: 'trc-panel__progress-value', text: '0 / —' });
+  const etaValue = el('span', { class: 'trc-panel__progress-value', text: '—' });
   const logBox = el('div', { class: 'trc-panel__log' });
   const badge = el('span', { class: 'trc-badge--dryrun', text: 'DRY-RUN' });
 
@@ -106,7 +117,11 @@ export function mountPanel({ config, onStart, onStop, onChange } = {}) {
   const body = el('div', { class: 'trc-panel__body' }, [
     el('label', { class: 'trc-panel__toggle' }, [dryRunEl, el('span', { text: 'Dry-run (nic nie usuwaj)' })]),
     el('div', { class: 'trc-panel__warn', text: '⚠ Dry-run WYŁĄCZONY — reposty będą realnie usuwane.' }),
-    el('div', { class: 'trc-panel__row' }, [el('label', { text: 'Limit (0 = bez limitu)' }), limitEl]),
+    el('div', { class: 'trc-panel__row' }, [el('label', { text: 'Limit (0 = bez limitu, maks. 500)' }), limitEl]),
+    el('div', {
+      class: 'trc-panel__note',
+      text: 'Duże partie zwiększają ryzyko ograniczeń TikToka — rozważ mniejsze z przerwami.',
+    }),
     el('div', { class: 'trc-panel__row trc-panel__row--delays' }, [
       el('label', { text: 'Opóźnienie [ms]' }),
       minDelayEl,
@@ -117,6 +132,10 @@ export function mountPanel({ config, onStart, onStop, onChange } = {}) {
     el('div', { class: 'trc-panel__progress' }, [
       el('span', { text: 'Postęp:' }),
       progressValue,
+    ]),
+    el('div', { class: 'trc-panel__progress' }, [
+      el('span', { text: 'Pozostało ~:' }),
+      etaValue,
     ]),
     logBox,
   ]);
@@ -133,7 +152,8 @@ export function mountPanel({ config, onStart, onStop, onChange } = {}) {
   // Zbiera wartości z pól, sanityzuje, zapisuje i emituje onChange.
   function commit() {
     config.dryRun = dryRunEl.checked;
-    config.max = toIntGE0(limitEl.value, 0);
+    // Limit klamrujemy do [0, 500]; 0 nadal oznacza „bez limitu”.
+    config.max = Math.min(toIntGE0(limitEl.value, 0), 500);
     config.minDelay = toIntGE0(minDelayEl.value, 0);
     config.maxDelay = toIntGE0(maxDelayEl.value, config.minDelay);
     // max nie może być mniejsze niż min — inaczej rand(min,max) byłby błędny.
@@ -229,12 +249,13 @@ export function mountPanel({ config, onStart, onStop, onChange } = {}) {
     if (atBottom) logBox.scrollTop = logBox.scrollHeight;
   }
 
-  // Aktualizuje licznik X / Y. Y = max (>0) albo „∞” przy braku limitu.
+  // Aktualizuje licznik X / Y oraz ETA. Y = max (>0) albo „∞” przy braku limitu.
   // done: true → koniec przebiegu, odblokuj UI.
   function setProgress(p = {}) {
     const count = p.count ?? 0;
     const total = p.max > 0 ? p.max : '∞';
     progressValue.textContent = `${count} / ${total}`;
+    etaValue.textContent = formatEta(p.etaMs);
     if (p.done) setRunning(false);
   }
 

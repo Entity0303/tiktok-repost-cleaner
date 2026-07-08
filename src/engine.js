@@ -48,7 +48,9 @@ export function createEngine({ config, onProgress, onLog }) {
     const close = S.closeButton();
     if (close) clickSafe(close);
     // Poczekaj chwilę, aż modal faktycznie zniknie (przycisk repostu przestaje istnieć).
-    await waitFor(() => !S.repostButton(), 2000, 100);
+    // Szybszy polling i krótszy timeout — modal zwykle znika szybko; to bezpieczne
+    // przyspieszenie (nie dotyka opóźnień między akcjami, które chronią przed rate-limitem).
+    await waitFor(() => !S.repostButton(), 1200, 60);
   }
 
   async function start() {
@@ -59,12 +61,31 @@ export function createEngine({ config, onProgress, onLog }) {
     const visited = new Set(); // href-y odwiedzonych kafelków (bez powtórek)
     let count = 0; // ile repostów usunięto (w dry-run: ile BY usunięto)
     let fails = 0; // nieudane akcje z rzędu (safe-stop po 5)
+    const runStart = Date.now(); // znacznik startu — do liczenia średniej i ETA
 
     log(config.dryRun ? '[DRY-RUN] Start — nic nie zostanie usunięte.' : 'Start.');
 
     // Warunek zatrzymania sprawdzany w punktach kontrolnych.
     const reachedMax = () => config.max > 0 && count >= config.max;
     const shouldStop = () => cancelled || reachedMax();
+
+    // Szacowany czas do końca [ms]. Średni czas na repost = elapsed / count
+    // (obejmuje pauzy i pomijane kafelki — realistyczne tempo). „Pozostało”:
+    //   - limit (max>0) → max - count,
+    //   - bez limitu (max=0) → szacunek z liczby kafelków w DOM; brak → null („—”).
+    const computeEta = () => {
+      if (count <= 0) return null;
+      const avg = (Date.now() - runStart) / count;
+      let remaining;
+      if (config.max > 0) {
+        remaining = config.max - count;
+      } else {
+        const gridCount = S.gridItems().length;
+        if (!gridCount) return null; // nie znamy liczby kafelków → nie zgadujemy ETA
+        remaining = gridCount - count;
+      }
+      return Math.max(0, remaining) * avg;
+    };
 
     while (!shouldStop()) {
       // 1. zbierz kafelki i odfiltruj już odwiedzone
@@ -142,8 +163,9 @@ export function createEngine({ config, onProgress, onLog }) {
         // 5. zamknij modal
         await closeModal();
 
-        // 6. postęp + losowa pauza przed kolejnym kafelkiem
-        progress({ count, max: config.max, href });
+        // 6. postęp (z ETA) + losowa pauza przed kolejnym kafelkiem.
+        progress({ count, max: config.max, href, etaMs: computeEta() });
+        // Jeśli to była ostatnia akcja (osiągnięto limit / stop), pomiń końcową pauzę.
         if (shouldStop()) break;
         await pause(config.minDelay, config.maxDelay);
       }
@@ -152,7 +174,7 @@ export function createEngine({ config, onProgress, onLog }) {
     running = false;
     const reason = cancelled ? (reachedMax() ? 'osiągnięto limit' : 'przerwano') : 'wyczerpano reposty';
     log(`Koniec (${reason}). Przetworzono repostów: ${count}.`);
-    progress({ count, max: config.max, done: true });
+    progress({ count, max: config.max, done: true, etaMs: null });
   }
 
   // Cancel token — przerwanie nastąpi przy najbliższym punkcie kontrolnym.

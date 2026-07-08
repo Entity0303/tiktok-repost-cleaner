@@ -98,6 +98,14 @@
   color: #d0d0d4;
 }
 
+/* Mała notka pod polem (np. ostrzeżenie o dużych partiach). */
+.trc-panel__note {
+  margin-top: -2px;
+  color: #9a9aa2;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .trc-panel__input {
   width: 88px;
   padding: 5px 7px;

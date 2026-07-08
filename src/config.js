@@ -51,8 +51,8 @@ const storage = {
 export const DEFAULT_CONFIG = {
   dryRun: true, // DOMYŚLNIE ON — nic nie jest usuwane
   max: 40, // maksymalna liczba repostów do usunięcia w jednym przebiegu; 0 = bez limitu
-  minDelay: 1500, // dolna granica losowego opóźnienia między akcjami [ms]
-  maxDelay: 3500, // górna granica losowego opóźnienia między akcjami [ms]
+  minDelay: 1000, // dolna granica losowego opóźnienia między akcjami [ms]
+  maxDelay: 2500, // górna granica losowego opóźnienia między akcjami [ms]
 };
 
 // JEDEN współdzielony, mutowalny obiekt konfiguracji. Ten sam referencyjnie
