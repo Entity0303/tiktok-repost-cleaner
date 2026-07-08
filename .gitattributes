@@ -1,0 +1,2 @@
+# Normalizuj końce wierszy do LF w repo (ucisza ostrzeżenia CRLF/LF na Windowsie).
+* text=auto eol=lf
