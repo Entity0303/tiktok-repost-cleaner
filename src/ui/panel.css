@@ -1,0 +1,64 @@
+/* panel.css — style pływającego panelu sterowania.
+   Wstrzykiwane jako <style> z panel.js (import ?raw), bez GM_addStyle,
+   żeby trzymać się jawnej listy @grant (tylko GM_setValue/GM_getValue).
+   Prefiks .trc- na wszystkich klasach, aby nie kolidować ze stylami TikToka. */
+
+.trc-panel {
+  position: fixed;
+  top: 96px;
+  right: 16px;
+  z-index: 2147483647; /* nad UI TikToka */
+  width: 280px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(20, 20, 22, 0.96);
+  color: #f2f2f2;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.trc-panel__title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.trc-panel__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.trc-panel__btn {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #fe2c55; /* akcent TikToka */
+  color: #fff;
+  cursor: pointer;
+}
+
+.trc-panel__btn--secondary {
+  background: #3a3a3d;
+}
+
+.trc-panel__log {
+  margin-top: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.trc-badge--dryrun {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #2e7d32;
+  font-size: 11px;
+}
